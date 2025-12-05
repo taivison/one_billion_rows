@@ -7,9 +7,12 @@ mod parse;
 
 use std::{
     cmp::{max, min},
-    collections::HashMap,
+    // collections::HashMap,
+    io::{BufWriter, Write, stdout},
     path::PathBuf,
 };
+
+use hashbrown::{HashMap, hash_map::RawEntryMut};
 
 use clap::Parser;
 
@@ -64,35 +67,41 @@ fn main() -> anyhow::Result<()> {
 
         let temperature = parse_temp(temperature);
 
-        if let Some(record) = map.get_mut(station) {
-            record.update(temperature);
-        } else {
-            map.insert(Array::new(station), Record::new(temperature));
+        match map.raw_entry_mut().from_key(station) {
+            RawEntryMut::Occupied(mut raw_occupied_entry_mut) => {
+                raw_occupied_entry_mut.get_mut().update(temperature);
+            }
+            RawEntryMut::Vacant(raw_vacant_entry_mut) => {
+                raw_vacant_entry_mut.insert(station.into(), Record::new(temperature));
+            }
         }
     }
-
-    print!("{{");
 
     let mut stats = map.into_iter().collect::<Vec<_>>();
     stats.sort_by(|v1, v2| v1.0.cmp(&v2.0));
 
     let mut stats = stats.iter().peekable();
 
+    let mut writer = BufWriter::new(stdout().lock());
+
+    write!(writer, "{{")?;
+
     while let Some((station, record)) = stats.next() {
-        print!(
+        write!(
+            writer,
             "{}={}/{}/{}",
             unsafe { str::from_utf8_unchecked(station) },
             (record.min as f64) / 10.0,
             ((record.total as f64) / 10.0) / record.count as f64,
             (record.max as f64) / 10.0
-        );
+        )?;
 
         if stats.peek().is_some() {
-            print!(", ");
+            write!(writer, ", ")?;
         }
     }
 
-    print!("}}");
+    write!(writer, "}}")?;
 
     Ok(())
 }

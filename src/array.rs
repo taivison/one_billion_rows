@@ -17,6 +17,12 @@ impl Array {
     }
 }
 
+impl From<&[u8]> for Array {
+    fn from(value: &[u8]) -> Self {
+        Array::new(value)
+    }
+}
+
 impl AsRef<[u8]> for Array {
     #[inline]
     fn as_ref(&self) -> &[u8] {
