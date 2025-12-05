@@ -1,3 +1,5 @@
+#![feature(slice_split_once)]
+
 use std::{
     collections::HashMap,
     fs::File,
@@ -44,26 +46,26 @@ fn main() -> anyhow::Result<()> {
     let file = File::open(args.path)?;
     let reader = BufReader::new(file);
 
-    let mut map = HashMap::<String, Record>::new();
+    let mut map = HashMap::<Vec<u8>, Record>::new();
 
-    for line in reader.lines() {
+    for line in reader.split(b'\n') {
         let line = line?;
 
-        if line.trim().is_empty() {
+        if line.is_empty() {
             continue;
         }
 
         let (station, temperature) = line
-            .split_once(';')
+            .split_once(|b| *b == b';')
             .ok_or(anyhow::anyhow!("Invalid separator"))?;
 
-        let temperature: f64 = temperature.trim().parse()?;
+        let temperature: f64 = unsafe { str::from_utf8_unchecked(temperature) }.parse()?;
 
         if let Some(record) = map.get_mut(station) {
             record.update(temperature);
         } else {
             map.insert(
-                station.to_string(),
+                station.to_vec(),
                 Record::new(1, temperature, temperature, temperature),
             );
         }
@@ -78,7 +80,8 @@ fn main() -> anyhow::Result<()> {
 
     while let Some((station, record)) = stats.next() {
         print!(
-            "{station}={}/{}/{}",
+            "{}={}/{}/{}",
+            unsafe { str::from_utf8_unchecked(station) },
             record.min,
             record.total / record.count as f64,
             record.max
