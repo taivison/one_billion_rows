@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, hash_map::Entry},
+    collections::HashMap,
     fs::File,
     io::{BufRead, BufReader},
     path::PathBuf,
@@ -59,11 +59,13 @@ fn main() -> anyhow::Result<()> {
 
         let temperature: f64 = temperature.trim().parse()?;
 
-        match map.entry(station.to_string()) {
-            Entry::Vacant(vacant_entry) => {
-                vacant_entry.insert(Record::new(1, temperature, temperature, temperature));
-            }
-            Entry::Occupied(ref mut occupied_entry) => occupied_entry.get_mut().update(temperature),
+        if let Some(record) = map.get_mut(station) {
+            record.update(temperature);
+        } else {
+            map.insert(
+                station.to_string(),
+                Record::new(1, temperature, temperature, temperature),
+            );
         }
     }
 
