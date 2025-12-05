@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, btree_map::Entry},
+    collections::{HashMap, hash_map::Entry},
     fs::File,
     io::{BufRead, BufReader},
     path::PathBuf,
@@ -44,7 +44,7 @@ fn main() -> anyhow::Result<()> {
     let file = File::open(args.path)?;
     let reader = BufReader::new(file);
 
-    let mut map: BTreeMap<String, Record> = BTreeMap::new();
+    let mut map = HashMap::<String, Record>::new();
 
     for line in reader.lines() {
         let line = line?;
@@ -69,7 +69,10 @@ fn main() -> anyhow::Result<()> {
 
     print!("{{");
 
-    let mut stats = map.iter().peekable();
+    let mut stats = map.into_iter().collect::<Vec<_>>();
+    stats.sort_by(|v1, v2| v1.0.cmp(&v2.0));
+
+    let mut stats = stats.iter().peekable();
 
     while let Some((station, record)) = stats.next() {
         print!(
