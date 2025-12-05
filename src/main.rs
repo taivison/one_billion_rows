@@ -1,5 +1,8 @@
 #![feature(slice_split_once)]
 
+mod array;
+use array::Array;
+
 use std::{
     collections::HashMap,
     fs::File,
@@ -46,7 +49,7 @@ fn main() -> anyhow::Result<()> {
     let file = File::open(args.path)?;
     let reader = BufReader::new(file);
 
-    let mut map = HashMap::<Vec<u8>, Record>::new();
+    let mut map = HashMap::<Array, Record>::new();
 
     for line in reader.split(b'\n') {
         let line = line?;
@@ -65,7 +68,7 @@ fn main() -> anyhow::Result<()> {
             record.update(temperature);
         } else {
             map.insert(
-                station.to_vec(),
+                Array::new(station),
                 Record::new(1, temperature, temperature, temperature),
             );
         }
