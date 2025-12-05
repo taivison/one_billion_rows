@@ -1,16 +1,21 @@
 #![feature(slice_split_once)]
+#![feature(portable_simd)]
 
 mod array;
-use array::Array;
+mod memmapped;
+mod parse;
 
 use std::{
+    cmp::{max, min},
     collections::HashMap,
-    fs::File,
-    io::{BufRead, BufReader},
     path::PathBuf,
 };
 
 use clap::Parser;
+
+use crate::array::Array;
+use crate::memmapped::{MemoryMappedFile, split_by};
+use crate::parse::parse_temp;
 
 #[derive(Debug, Parser)]
 #[command(version, about, long_about = None)]
@@ -20,57 +25,49 @@ struct Args {
 
 struct Record {
     count: usize,
-    total: f64,
-    min: f64,
-    max: f64,
+    total: i64,
+    min: i16,
+    max: i16,
 }
 
 impl Record {
-    pub fn new(count: usize, total: f64, min: f64, max: f64) -> Self {
+    pub fn new(value: i16) -> Self {
         Self {
-            count,
-            total,
-            min,
-            max,
+            count: 1,
+            total: value as i64,
+            min: value,
+            max: value,
         }
     }
 
-    pub fn update(&mut self, value: f64) {
+    pub fn update(&mut self, value: i16) {
         self.count += 1;
-        self.max = self.max.max(value);
-        self.min = self.min.min(value);
-        self.total += value;
+        self.max = max(self.max, value);
+        self.min = min(self.min, value);
+        self.total += value as i64;
     }
 }
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
-    let file = File::open(args.path)?;
-    let reader = BufReader::new(file);
+    let file = MemoryMappedFile::open(args.path)?;
 
-    let mut map = HashMap::<Array, Record>::new();
+    let mut map = HashMap::<Array, Record>::with_capacity(10_000);
 
-    for line in reader.split(b'\n') {
-        let line = line?;
-
+    for line in file.lines() {
         if line.is_empty() {
             continue;
         }
 
-        let (station, temperature) = line
-            .split_once(|b| *b == b';')
-            .ok_or(anyhow::anyhow!("Invalid separator"))?;
+        let (station, temperature) = split_by(line, b';');
 
-        let temperature: f64 = unsafe { str::from_utf8_unchecked(temperature) }.parse()?;
+        let temperature = parse_temp(temperature);
 
         if let Some(record) = map.get_mut(station) {
             record.update(temperature);
         } else {
-            map.insert(
-                Array::new(station),
-                Record::new(1, temperature, temperature, temperature),
-            );
+            map.insert(Array::new(station), Record::new(temperature));
         }
     }
 
@@ -85,9 +82,9 @@ fn main() -> anyhow::Result<()> {
         print!(
             "{}={}/{}/{}",
             unsafe { str::from_utf8_unchecked(station) },
-            record.min,
-            record.total / record.count as f64,
-            record.max
+            (record.min as f64) / 10.0,
+            ((record.total as f64) / 10.0) / record.count as f64,
+            (record.max as f64) / 10.0
         );
 
         if stats.peek().is_some() {
