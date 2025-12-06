@@ -75,36 +75,40 @@ impl<'a> Iterator for Lines<'a> {
             return None;
         }
 
-        let next_line = unsafe {
-            libc::memchr(
-                self.remaining.as_ptr() as *const c_void,
-                b'\n' as c_int,
-                self.remaining.len(),
-            )
-        };
-
-        if next_line.is_null() {
-            let result = self.remaining;
-            self.remaining = &self.remaining[self.remaining.len()..];
+        if let Some(index) = memchr(self.remaining, b'\n') {
+            let result = &self.remaining[..index];
+            self.remaining = &self.remaining[index + 1..];
             Some(result)
         } else {
-            let len =
-                unsafe { next_line.offset_from(self.remaining.as_ptr() as *const c_void) } as usize;
-            let result = &self.remaining[..len];
-            self.remaining = &self.remaining[len + 1..];
+            let result = self.remaining;
+            self.remaining = &self.remaining[self.remaining.len()..];
             Some(result)
         }
     }
 }
 
 pub fn split_by(slice: &[u8], c: u8) -> (&[u8], &[u8]) {
-    let ptr = unsafe { libc::memchr(slice.as_ptr() as *const c_void, c as c_int, slice.len()) };
+    if let Some(index) = memchr(slice, c) {
+        (&slice[..index], &slice[index + 1..])
+    } else {
+        (slice, &slice[slice.len()..])
+    }
+}
+
+#[inline(always)]
+fn memchr(haystack: &[u8], needle: u8) -> Option<usize> {
+    let ptr = unsafe {
+        libc::memchr(
+            haystack.as_ptr() as *const c_void,
+            needle as c_int,
+            haystack.len(),
+        )
+    };
 
     if ptr.is_null() {
-        (slice, &slice[slice.len()..])
+        return None;
     } else {
-        let len = unsafe { ptr.offset_from(slice.as_ptr() as *const c_void) } as usize;
-
-        (&slice[..len], &slice[len + 1..])
+        let len = unsafe { ptr.offset_from(haystack.as_ptr() as *const c_void) } as usize;
+        return Some(len);
     }
 }

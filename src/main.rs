@@ -7,7 +7,6 @@ mod parse;
 
 use std::{
     cmp::{max, min},
-    // collections::HashMap,
     io::{BufWriter, Write, stdout},
     path::PathBuf,
 };

@@ -8,3 +8,6 @@ anyhow = "1.0.100"
 clap = { version = "4.5.53", features = ["derive"] }
 hashbrown = "0.16.1"
 libc = "0.2.178"
+
+[profile.release]
+lto = "fat"
