@@ -38,10 +38,6 @@ impl MemoryMappedFile {
 
         Ok(Self { ptr, len })
     }
-
-    pub fn lines(&self) -> Lines<'_> {
-        Lines::new(self.as_ref())
-    }
 }
 
 impl Drop for MemoryMappedFile {
@@ -62,7 +58,7 @@ pub struct Lines<'a> {
 }
 
 impl<'a> Lines<'a> {
-    fn new(items: &'a [u8]) -> Self {
+    pub fn new(items: &'a [u8]) -> Self {
         Self { remaining: items }
     }
 }
@@ -96,7 +92,7 @@ pub fn split_by(slice: &[u8], c: u8) -> (&[u8], &[u8]) {
 }
 
 #[inline(always)]
-fn memchr(haystack: &[u8], needle: u8) -> Option<usize> {
+pub fn memchr(haystack: &[u8], needle: u8) -> Option<usize> {
     let ptr = unsafe {
         libc::memchr(
             haystack.as_ptr() as *const c_void,

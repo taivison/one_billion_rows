@@ -7,6 +7,7 @@ mod parse;
 
 use std::{
     cmp::{max, min},
+    collections::{BTreeMap, btree_map::Entry},
     io::{BufWriter, Write, stdout},
     path::PathBuf,
 };
@@ -15,9 +16,9 @@ use hashbrown::{HashMap, hash_map::RawEntryMut};
 
 use clap::Parser;
 
-use crate::array::Array;
-use crate::memmapped::{MemoryMappedFile, split_by};
+use crate::memmapped::{MemoryMappedFile, memchr, split_by};
 use crate::parse::parse_temp;
+use crate::{array::Array, memmapped::Lines};
 
 #[derive(Debug, Parser)]
 #[command(version, about, long_about = None)]
@@ -48,16 +49,20 @@ impl Record {
         self.min = min(self.min, value);
         self.total += value as i64;
     }
+
+    pub fn merge(&mut self, other: Self) {
+        self.count += other.count;
+        self.max = max(self.max, other.max);
+        self.min = min(self.min, other.min);
+        self.total += other.total;
+    }
 }
 
-fn main() -> anyhow::Result<()> {
-    let args = Args::parse();
+type Map = HashMap<Array, Record>;
 
-    let file = MemoryMappedFile::open(args.path)?;
-
-    let mut map = HashMap::<Array, Record>::with_capacity(10_000);
-
-    for line in file.lines() {
+fn process(values: &[u8]) -> Map {
+    let mut map = Map::with_capacity(1_000);
+    for line in Lines::new(values) {
         if line.is_empty() {
             continue;
         }
@@ -76,10 +81,56 @@ fn main() -> anyhow::Result<()> {
         }
     }
 
-    let mut stats = map.into_iter().collect::<Vec<_>>();
-    stats.sort_by(|v1, v2| v1.0.cmp(&v2.0));
+    map
+}
 
-    let mut stats = stats.iter().peekable();
+fn main() -> anyhow::Result<()> {
+    let args = Args::parse();
+    let file = MemoryMappedFile::open(args.path)?;
+    let nthreads = std::thread::available_parallelism()?;
+    let mut map: BTreeMap<Array, Record> = BTreeMap::new();
+
+    std::thread::scope(|scope| {
+        let values = file.as_ref();
+        let (tx, rx) = std::sync::mpsc::sync_channel(nthreads.get());
+        let chunk_size = values.len() / nthreads;
+        let mut current = 0;
+        for _ in 0..nthreads.get() {
+            let start = current;
+            let end = (current + chunk_size).min(values.len());
+            let end = if end == values.len() {
+                values.len()
+            } else {
+                match memchr(&values[end..], b'\n') {
+                    Some(new_line) => end + new_line + 1,
+                    None => values.len(),
+                }
+            };
+
+            let values = &values[start..end];
+            current = end;
+            let tx = tx.clone();
+            scope.spawn(move || tx.send(process(values)));
+        }
+
+        drop(tx);
+
+        for records in rx {
+            for (k, v) in records {
+                match map.entry(k) {
+                    Entry::Vacant(none) => {
+                        none.insert(v);
+                    }
+                    Entry::Occupied(some) => {
+                        let stat = some.into_mut();
+                        stat.merge(v);
+                    }
+                }
+            }
+        }
+    });
+
+    let mut stats = map.iter().peekable();
 
     let mut writer = BufWriter::new(stdout().lock());
 
@@ -89,7 +140,7 @@ fn main() -> anyhow::Result<()> {
         write!(
             writer,
             "{}={}/{}/{}",
-            unsafe { str::from_utf8_unchecked(station) },
+            unsafe { std::str::from_utf8_unchecked(station) },
             (record.min as f64) / 10.0,
             ((record.total as f64) / 10.0) / record.count as f64,
             (record.max as f64) / 10.0
